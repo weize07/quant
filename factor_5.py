@@ -6,6 +6,26 @@ FREQUENCY=15  # 调仓频率
 SAMPLE_DAYS=63  # 样本长度
 STOCKS=10   # 持仓数目
 
+'''
+Ri=ai+biRM+siE(SMB)+hiE(HML)+εi
+Ri=ai+biRM+siE(SMB)+hiE(HML)+εi
+其中
+Ri=E(ri−rf)，指股票i比起无风险投资的期望超额收益率。
+RM=E(rM−rf)，为市场相对无风险投资的期望超额收益率，
+E(SMB)是小市值公司相对大市值公司股票的期望超额收益率，
+E(HML)则是高B/M公司股票比起低B/M的公司股票的期望超额收益率，
+
+而 εi 是回归残差项。
+具体计算方法：
+rf : 直接选用基准利率，例如0.04
+RM : 选择一个股指（例如沪深300）的收益 - rf
+SMB: 大盘股的平均收益率 - 小盘股的平均收益率
+'''
+
+def Compute():
+    stocks = ts.get_stock_basics()
+    print(stocks)
+
 #8
 #按照Fama-French规则计算k个参数并且回归，计算出股票的alpha并且输出
 #输入：stocks-list类型； begin，end为“yyyy-mm-dd”类型字符串,rf为无风险收益率-double类型
@@ -49,7 +69,7 @@ def FF (stocks, begin, end, rf):
     df4=np.diff(np.log(df3),axis=0)+0*df3[1:]
     #求因子的值
     SMB=sum(df4[S].T)/len(S)-sum(df4[B].T)/len(B)
-    HMI=sum(df4[H].T)/len(H)-sum(df4[L].T)/len(L)
+    HML=sum(df4[H].T)/len(H)-sum(df4[L].T)/len(L)
     RMW=sum(df4[R].T)/len(R)-sum(df4[W].T)/len(W)
     CMA=sum(df4[C].T)/len(C)-sum(df4[A].T)/len(A)
 
@@ -58,10 +78,10 @@ def FF (stocks, begin, end, rf):
     RM=diff(np.log(dp))-rf/252
 
     #将因子们计算好并且放好
-    X=pd.DataFrame({"RM":RM,"SMB":SMB,"HMI":HMI,"RMW":RMW,"CMA":CMA})
+    X=pd.DataFrame({"RM":RM,"SMB":SMB,"HML":HML,"RMW":RMW,"CMA":CMA})
     #取前g.NoF个因子为策略因子
-    factor_flag=["RM","SMB","HMI","RMW","CMA"][:g.NoF]
-    print factor_flag
+    factor_flag=["RM","SMB","HML","RMW","CMA"][:g.NoF]
+    print(factor_flag)
     X=X[factor_flag]
 
     # 对样本数据进行线性回归并计算ai
@@ -77,7 +97,7 @@ def FF (stocks, begin, end, rf):
     return scores
 
 def main():
-
+    Compute()
 
 if __name__ == '__main__':
   main()
