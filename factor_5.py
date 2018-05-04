@@ -1,10 +1,12 @@
 import tushare as ts
 import numpy as np
 from sklearn import datasets, neural_network, linear_model
+import pandas as pd
 
-FREQUENCY=15  # 调仓频率
-SAMPLE_DAYS=63  # 样本长度
-STOCKS=10   # 持仓数目
+FREQUENCY = 15  # 调仓频率
+SAMPLE_DAYS = 63  # 样本长度
+STOCKS = 10   # 持仓数目
+RF = 0.04  # 无风险收益
 
 '''
 Ri=ai+biRM+siE(SMB)+hiE(HML)+εi
@@ -23,8 +25,48 @@ SMB: 大盘股的平均收益率 - 小盘股的平均收益率
 '''
 
 def Compute():
+    today = "2017-01-01"
+    trade_cal = ts.trade_cal()
+    # trade_cal = ts[60:]
+    test = trade_cal.query('calendarDate < @today and isOpen == 1')
+    start = test.iloc[-60].calendarDate
+    end = test.iloc[-1].calendarDate
+
+    # test = trade_cal[trade_cal.calendarDate < end]
+    # print (start)
+    # print (end)
+    # scode = '600000'
+    # kdata_start = ts.get_k_data(scode, start=start, end=end)
+    # # kdata_end = ts.get_k_data(scode, start=end, end=end)['close']
+    # # print(kdata_start)
+    # # print(kdata_end)
+    # df3 = kdata_start['close'][:]
+    # print(df3)
+    # df4 = np.diff(np.log(df3),axis=0)+0*df3[1:]
+    # print(df4)
+
+    hs300_kdata = ts.get_k_data('hs300', start=start, end=end)
+    # print(dp)
+    dp = hs300_kdata['close'][:]
+    dp1 = np.diff(np.log(dp))
+    dp2 = np.mean(dp1)
+    RM = dp2 - RF / 252
+    # print(dp1)
+    # print(dp2)
+    # print(RM)
     stocks = ts.get_stock_basics()
-    print(stocks)
+    for scode, stock in stocks.iterrows():
+        print(scode)
+        kdata = ts.get_k_data(scode, start=start, end=start)
+        print(kdata)
+        break
+    #
+    # stocks = stocks[['name', 'outstanding', 'bvps', 'pb']]
+    # stocks['market_cap'] = stocks.outstanding * stocks.bvps * stocks.pb
+    # stocks['BTM'] = 1 / stocks.pb
+    # stocks.sort_values(['BTM'])
+    # stocks.sort_values(['market_cap'])
+    # print(stocks)
 
 #8
 #按照Fama-French规则计算k个参数并且回归，计算出股票的alpha并且输出
