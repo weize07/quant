@@ -2,6 +2,10 @@ import tushare as ts
 import numpy as np
 from sklearn import datasets, neural_network, linear_model
 import pandas as pd
+from datetime import date
+
+import statsmodels.api as sm
+from statsmodels import regression
 
 FREQUENCY = 15  # 调仓频率
 SAMPLE_DAYS = 63  # 样本长度
@@ -25,120 +29,89 @@ SMB: 大盘股的平均收益率 - 小盘股的平均收益率
 '''
 
 def Compute():
-    today = "2017-01-01"
+    today = str(date.today())
     trade_cal = ts.trade_cal()
-    # trade_cal = ts[60:]
     test = trade_cal.query('calendarDate < @today and isOpen == 1')
     start = test.iloc[-60].calendarDate
     end = test.iloc[-1].calendarDate
 
-    # test = trade_cal[trade_cal.calendarDate < end]
-    # print (start)
-    # print (end)
-    # scode = '600000'
-    # kdata_start = ts.get_k_data(scode, start=start, end=end)
-    # # kdata_end = ts.get_k_data(scode, start=end, end=end)['close']
-    # # print(kdata_start)
-    # # print(kdata_end)
-    # df3 = kdata_start['close'][:]
-    # print(df3)
-    # df4 = np.diff(np.log(df3),axis=0)+0*df3[1:]
-    # print(df4)
-
     hs300_kdata = ts.get_k_data('hs300', start=start, end=end)
-    # print(dp)
-    dp = hs300_kdata['close'][:]
-    dp1 = np.diff(np.log(dp))
-    dp2 = np.mean(dp1)
-    RM = dp2 - RF / 252
-    # print(dp1)
-    # print(dp2)
-    # print(RM)
+    HS300 = hs300_kdata['close'][:]
+    HS300_DIFF = np.diff(np.log(HS300))
+    RM = HS300_DIFF - RF / 252
     stocks = ts.get_stock_basics()
+    # stocks = stocks.iloc[0:30]
+
+    kdatas = None
+    counter = 0
     for scode, stock in stocks.iterrows():
-        print(scode)
-        kdata = ts.get_k_data(scode, start=start, end=start)
-        print(kdata)
-        break
-    #
-    # stocks = stocks[['name', 'outstanding', 'bvps', 'pb']]
-    # stocks['market_cap'] = stocks.outstanding * stocks.bvps * stocks.pb
-    # stocks['BTM'] = 1 / stocks.pb
+        kdata = ts.get_k_data(scode, start=start, end=end)
+        if kdatas is None:
+            kdatas = kdata
+        else:
+            kdatas = pd.concat([kdatas, kdata]) 
+        counter += 1
+        print(counter)
+    kdatas['log_close_price'] = np.log(kdatas.close)
+    kdatas = kdatas.reset_index(drop=True)
+    kdatas['diffs'] = kdatas.groupby("code")['log_close_price'].diff()
+
+    stocks = stocks[['name', 'outstanding', 'bvps', 'pb']]
+    stocks['market_cap'] = stocks.outstanding * stocks.bvps * stocks.pb
+    stocks['BTM'] = 1 / stocks.pb
     # stocks.sort_values(['BTM'])
     # stocks.sort_values(['market_cap'])
-    # print(stocks)
 
-#8
-#按照Fama-French规则计算k个参数并且回归，计算出股票的alpha并且输出
-#输入：stocks-list类型； begin，end为“yyyy-mm-dd”类型字符串,rf为无风险收益率-double类型
-#输出：最后的打分-dataframe类型
-def FF (stocks, begin, end, rf):
-    LoS=len(stocks)
-    #查询三因子/五因子的语句
-    q = query(
-        valuation.code,
-        valuation.market_cap,
-        (balance.total_owner_equities/valuation.market_cap/100000000.0).label("BTM"),
-        indicator.roe,
-        balance.total_assets.label("Inv")
-    ).filter(
-        valuation.code.in_(stocks)
-    )
+    length = len(stocks)
+    head = int(length / 3)
+    tail = int(length - length / 3)
+    S_BTM = stocks.sort_values('BTM').index.get_values()[:head]
+    L_BTM = stocks.sort_values('BTM').index.get_values()[tail:]
+    S_MC = stocks.sort_values('market_cap').index.get_values()[:head]
+    L_MC = stocks.sort_values('market_cap').index.get_values()[tail:]
+    # print(avg_day_r[['000014', '300107']])
+    # print(kdatas[kdatas.code.isin(L_BTM)])
+    HML = kdatas[kdatas.code.isin(L_BTM)].groupby("date")["diffs"].mean() 
+    - kdatas[kdatas.code.isin(S_BTM)].groupby("date")["diffs"].mean()
+    # SMB=sum(df4[S].T)/len(S)-sum(df4[B].T)/len(B)
+    # HML=sum(df4[H].T)/len(H)-sum(df4[L].T)/len(L)
+    # print(kdatas[kdatas.code.isin(S_MC)])
+    SMB = kdatas[kdatas.code.isin(S_MC)].groupby("date")["diffs"].mean() 
+    - kdatas[kdatas.code.isin(L_MC)].groupby("date")["diffs"].mean()
+    
+    X = pd.DataFrame({"RM":RM,"SMB":SMB[1:],"HML":HML[1:]})
+    X['constant'] = 1
+    X = X.values
 
-    df = get_fundamentals(q,begin)
-
-    #计算5因子再投资率的时候需要跟一年前的数据比较，所以单独取出计算
-    ldf=get_fundamentals(q,getDay(begin,-252))
-    # 若前一年的数据不存在，则暂且认为Inv=0
-    if len(ldf)==0:
-        ldf=df
-    df["Inv"]=np.log(df["Inv"]/ldf["Inv"])
-
-
-    # 选出特征股票组合
-    S=df.sort('market_cap')['code'][:LoS/3]
-    B=df.sort('market_cap')['code'][LoS-LoS/3:]
-    L=df.sort('BTM')['code'][:LoS/3]
-    H=df.sort('BTM')['code'][LoS-LoS/3:]
-    W=df.sort('roe')['code'][:LoS/3]
-    R=df.sort('roe')['code'][LoS-LoS/3:]
-    C=df.sort('Inv')['code'][:LoS/3]
-    A=df.sort('Inv')['code'][LoS-LoS/3:]
-
-    # 获得样本期间的股票价格并计算日收益率
-    df2 = get_price(stocks,begin,end,'1d')
-    df3=df2['close'][:]
-    df4=np.diff(np.log(df3),axis=0)+0*df3[1:]
-    #求因子的值
-    SMB=sum(df4[S].T)/len(S)-sum(df4[B].T)/len(B)
-    HML=sum(df4[H].T)/len(H)-sum(df4[L].T)/len(L)
-    RMW=sum(df4[R].T)/len(R)-sum(df4[W].T)/len(W)
-    CMA=sum(df4[C].T)/len(C)-sum(df4[A].T)/len(A)
-
-    #用沪深300作为大盘基准
-    dp=get_price('000300.XSHG',begin,end,'1d')['close']
-    RM=diff(np.log(dp))-rf/252
-
-    #将因子们计算好并且放好
-    X=pd.DataFrame({"RM":RM,"SMB":SMB,"HML":HML,"RMW":RMW,"CMA":CMA})
-    #取前g.NoF个因子为策略因子
-    factor_flag=["RM","SMB","HML","RMW","CMA"][:g.NoF]
-    print(factor_flag)
-    X=X[factor_flag]
 
     # 对样本数据进行线性回归并计算ai
-    t_scores=[0.0]*LoS
-    for i in range(LoS):
-        t_stock=stocks[i]
-        sample=pd.DataFrame()
-        t_r=linreg(X,df4[t_stock]-rf/252,len(factor_flag))
-        t_scores[i]=t_r[0]
+    scores = {}
+    for scode, stock in stocks.iterrows():
+        # t_stock = stocks[scode]
+        Y = kdatas.query('code == @scode')['diffs'] - RF / 252
+        Y = Y.values
+        Y = Y[1:]
 
-    #这个scores就是alpha
-    scores=pd.DataFrame({'code':stocks,'score':t_scores})
-    return scores
+        if len(Y) == len(RM):
+            results = regression.linear_model.OLS(Y, X).fit()
+            # print(scode, results.params[3])
+            scores[scode] = results.params[3]
+            # model = linear_model.LinearRegression().fit(X, Y)
+            # print(model.coef_)
+    sorted_scores = sorted(scores.items(), key=lambda d: d[1])
+    for scode, score in sorted_scores:
+        print(scode, score)
 
 def main():
+ #    X = [[-0.05, 0.004, -0.05, 1],
+ # [-0.07, 0.007, -0.07, 1],
+ # [-0.03, 0.006, -0.02, 1],
+ # [-0.02, 0.005, -0.01, 1]]
+ #    Y = [-0.1057798,  -0.10515739, -0.07917688, -0.02072908]
+ #    results = regression.linear_model.OLS(Y, X).fit()
+ #    print(results.params)
+    # model = linear_model.LinearRegression().fit(X, Y)
+    # print(model.coef_)
     Compute()
 
 if __name__ == '__main__':
